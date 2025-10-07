@@ -1,0 +1,18 @@
+{
+  "trucks": [
+    {
+      "name": "Blue Sparrow",
+      "pref_url": "https://www.bluesparrowpgh.com/",
+      "urls": [
+        "https://www.bluesparrowpgh.com/",
+        "https://instagram.com/bluesparrowpgh"
+      ],
+      "website": "https://www.bluesparrowpgh.com/",
+      "instagram": "https://instagram.com/bluesparrowpgh",
+      "facebook": null,
+      "notes": "Calendar on website",
+      "active": true
+    }
+  ]
+}
+

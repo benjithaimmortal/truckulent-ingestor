@@ -1,0 +1,27 @@
+{
+  "name": "food-truck-ingestor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CLI to ingest Pittsburgh food truck events via Firecrawl/Apify into Supabase",
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "ingest": "tsx scripts/ingest.ts",
+    "upload-cache": "tsx scripts/upload-cache.ts",
+    "dev": "tsx --watch scripts/ingest.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "node-fetch": "^3.3.2",
+    "yargs": "^17.7.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.19",
+    "@types/yargs": "^17.0.33",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.3"
+  }
+}
