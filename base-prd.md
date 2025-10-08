@@ -74,10 +74,6 @@ export type Event = {
 ### 3.1 Database Schema (SQL)
 
 ```sql
--- Enable RLS (Row Level Security)
-ALTER TABLE trucks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE events ENABLE ROW LEVEL SECURITY;
-
 -- Trucks table
 CREATE TABLE IF NOT EXISTS trucks (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -111,6 +107,10 @@ CREATE TABLE IF NOT EXISTS events (
   UNIQUE(truck_id, start_ts, venue, raw_address)
 );
 
+-- Enable RLS (Row Level Security)
+ALTER TABLE trucks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE events ENABLE ROW LEVEL SECURITY;
+
 -- Indexes for performance
 CREATE INDEX IF NOT EXISTS idx_trucks_name ON trucks(name);
 CREATE INDEX IF NOT EXISTS idx_trucks_active ON trucks(active);
@@ -134,12 +134,12 @@ CREATE TRIGGER update_trucks_updated_at BEFORE UPDATE ON trucks
 CREATE TRIGGER update_events_updated_at BEFORE UPDATE ON events
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- RLS Policies (adjust as needed for your auth setup)
-CREATE POLICY "Allow all operations for service role" ON trucks
-  FOR ALL USING (true);
+-- RLS Policies (simple service role access)
+CREATE POLICY "Service role access" ON trucks
+  FOR ALL USING (auth.role() = 'service_role');
 
-CREATE POLICY "Allow all operations for service role" ON events
-  FOR ALL USING (true);
+CREATE POLICY "Service role access" ON events
+  FOR ALL USING (auth.role() = 'service_role');
 
 -- Optional: Public view for frontend consumption
 CREATE OR REPLACE VIEW public_events AS
@@ -393,7 +393,7 @@ for (const truck of seed.trucks) {
 
 ## 10) Normalization rules
 
-* **Time window**: drop events outside `now() - 1day` .. `now() + WINDOW_DAYS`.
+* **Time window**: No filtering - all events are accepted regardless of date.
 * **Truck name**: if extractor returns blank, set to input `truck.name`.
 * **Venue**: if missing, try to parse from title/caption around `@|at` tokens.
 * **Address**: keep raw if available; leave geocoding off by default.
@@ -581,6 +581,8 @@ export async function upsertEvents(truckId: string, events: Event[]) {
 
 This section mirrors the code as implemented and provides a step-by-step flow for diagnosis.
 
+**Note**: See `.cursorrules` for development preferences and coding standards.
+
 ### 17.1 End-to-End Steps
 
 1) Seed load
@@ -615,17 +617,18 @@ This section mirrors the code as implemented and provides a step-by-step flow fo
    - Non-ISO `start_iso` or missing `venue` entries are dropped; verbose logs show `llm-input` and `llm-events`.
 
 8) Normalization & windows
-   - `normalizeAndFilter` enforces city default, and a time window of `now() - WINDOW_PAST_DAYS` (default 14) to `now() + WINDOW_DAYS` (default 60).
+   - `normalizeAndFilter` enforces city default, but accepts all events regardless of date (no time filtering).
 
 9) Upserts (skip when `--dry`)
    - Upsert truck by `name`, updating `last_seen_at` each run.
    - Upsert events by composite conflict `truck_id,start_ts,venue,raw_address` with `last_seen_at` on each event row.
-   - Local cache: write snapshots and pending upserts under `/.cache/` so failed writes can be replayed.
+   - Events are deduplicated by composite key before upsert to avoid constraint violations.
+   - Local cache: write snapshots, pending upserts, scraped data, and LLM events under `/.cache/TIMESTAMP/` so failed writes can be replayed.
 
 10) Cache upload command
     - `npm run upload-cache` uploads cached data to Supabase.
     - Options: `--dry` (preview), `--from <file>` (specific cache file), `--truck <name>` (filter), `--log-file <path>`.
-    - Files: `seed_TIMESTAMP.json` (trucks), `pending_upserts.jsonl` (events), `write_failures.jsonl` (errors).
+    - Files: `/.cache/TIMESTAMP/seed.json` (trucks), `/.cache/TIMESTAMP/pending_upserts.jsonl` (events), `/.cache/TIMESTAMP/scraped_data.jsonl` (raw data), `/.cache/TIMESTAMP/llm_events.jsonl` (processed events), `/.cache/TIMESTAMP/write_failures.jsonl` (errors).
 
 11) Logging & diagnostics
    - JSONL logs to console; `--log-file <path>` also writes to file.
@@ -637,7 +640,7 @@ This section mirrors the code as implemented and provides a step-by-step flow fo
 
 ### 17.2 Configuration Summary (env)
 
-- Core: `SEED_JSON_URL`, `CITY_DEFAULT`, `WINDOW_DAYS`, `WINDOW_PAST_DAYS`
+- Core: `SEED_JSON_URL`, `CITY_DEFAULT` (time window filtering removed)
 - Firecrawl: `FIRECRAWL_URL`, `FIRECRAWL_API_KEY`
 - Apify: `APIFY_TOKEN`, `APIFY_MODE`, `APIFY_EXTRA_INPUT`
   - Actors: `APIFY_ACTOR_FB_EVENTS`, `APIFY_ACTOR_FB_PAGES`, `APIFY_ACTOR_FB_POSTS`, `APIFY_ACTOR_IG_SCRAPER`
@@ -646,14 +649,17 @@ This section mirrors the code as implemented and provides a step-by-step flow fo
 - Supabase: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`
 - LLM: `USE_LLM`, `OPENAI_API_KEY`
 - Execution: `CONCURRENCY`
- - Local cache: none required; stored in `/.cache/` automatically
+ - Local cache: none required; stored in `/.cache/TIMESTAMP/` automatically (seed snapshots, pending upserts, scraped data, LLM events, write failures)
 
 ### 17.3 Operational Steps (Troubleshooting)
 
-1) Run `--dry --verbose --log-file logs/run.jsonl` to inspect request/response snippets.
+1) Run `--dry --verbose --log-file run.jsonl` to inspect request/response snippets (creates `logs/TIMESTAMP/run.jsonl`).
 2) If Apify shows empty/non-JSON, switch to `APIFY_MODE=async` or ensure dataset-items mode.
 3) If IG consumes too many credits, lower `APIFY_IG_MAX_POSTS` or set per-truck limits in `APIFY_POST_LIMITS`.
 4) If no events parsed from posts, enable `USE_LLM=true` and verify `llm-events` output; otherwise improve regex in `normalize.ts`.
 5) When satisfied, run without `--dry` to upsert; confirm trucks have `last_seen_at` updated and events appear without duplicates.
-6) If Supabase writes fail, check `/.cache/write_failures.jsonl` for error details, then use `npm run upload-cache -- --dry` to preview cached data.
-7) Upload specific cache files: `npm run upload-cache -- --from pending_upserts.jsonl --truck "Blue Sparrow" --dry`.
+6) If Supabase writes fail, check `/.cache/TIMESTAMP/write_failures.jsonl` for error details, then use `npm run upload-cache -- --dry` to preview cached data.
+7) Upload specific cache files: `npm run upload-cache -- --from pending_upserts.jsonl --truck "Blue Sparrow" --dry --log-file upload.jsonl`.
+8) Upload LLM events: `npm run upload-cache -- --from llm_events.jsonl --dry --log-file upload.jsonl`.
+9) For 401 RLS errors: Verify `SUPABASE_SERVICE_ROLE_KEY` is correct and has service role permissions.
+10) For 400 column errors: Ensure schema matches the SQL in section 3.1, especially `last_seen_at` columns.

@@ -1,0 +1,75 @@
+# Cursor Rules for Food Truck Ingestor
+
+## Project Overview
+Node/TypeScript CLI that ingests Pittsburgh food truck events via Firecrawl (web) and Apify (FB/IG), normalizes with LLM parsing, and upserts to Supabase.
+
+## Code Style & Preferences
+- Use TypeScript with strict types
+- Prefer explicit error handling with detailed messages
+- Use `as any` sparingly, only for external API responses
+- Always include verbose logging for debugging
+- Prefer functional approaches over classes
+- Use async/await over promises
+- Include comprehensive JSDoc for complex functions
+
+## File Organization
+- Keep lib/ modules focused and single-purpose
+- Use descriptive names: `extractWithFirecrawl`, `normalizeAndFilter`
+- Group related functionality (all Apify logic in `lib/apify.ts`)
+- Maintain clear separation between extraction, normalization, and persistence
+
+## Error Handling
+- Always log errors with context (truck name, URL, provider)
+- Include response snippets in error messages (first 200 chars)
+- Use graceful degradation (e.g., optional `last_seen_at` column)
+- Never truncate client-side results; rely on actor-side limits
+- Continue processing on individual failures, don't abort entire run
+
+## API Integration Patterns
+- Use environment variables for all configuration
+- Support multiple execution modes (sync-dataset, sync, async)
+- Implement retry logic with exponential backoff
+- Rate limit API calls to prevent quota exhaustion
+- Cache results locally for replay capability
+
+## Logging Standards
+- JSONL format for structured logs
+- Include timestamps, levels, and contextual metadata
+- Log request/response snippets for debugging
+- Support both console and file output
+- Use descriptive message keys: `candidate-start`, `llm-events`, `dry-summary`
+
+## Database Patterns
+- Use upsert operations with conflict resolution
+- Include `last_seen_at` timestamps for audit trails
+- Support composite unique constraints
+- Handle RLS policies gracefully
+- Provide fallback cache for failed writes
+
+## CLI Design
+- Support filtering: `--only`, `--limit`, `--include-inactive`
+- Dry run mode: `--dry` for testing without writes
+- Verbose logging: `--verbose` for detailed debugging
+- File logging: `--log-file` for persistence
+- Clear help text and error messages
+
+## Testing & Debugging
+- Always test with `--dry` first
+- Use `--verbose` to inspect API calls
+- Check cache files in `/.cache/` for failed operations
+- Support replay of cached data with `npm run upload-cache`
+- Document troubleshooting steps in PRD
+
+## Performance Considerations
+- Limit concurrent operations with `CONCURRENCY` setting
+- Use actor-side limits to reduce API calls
+- Implement proper timeouts (5 minutes default)
+- Support parallel processing where safe
+- Cache frequently accessed data
+
+## Security & Configuration
+- Never commit API keys or secrets
+- Use service role keys for database access
+- Support RLS policies for multi-tenant scenarios
+- Validate all external inputs
+- Use environment-specific configuration

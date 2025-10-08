@@ -1,19 +1,16 @@
 import { Event } from '../schemas';
 
-export function normalizeAndFilter(events: Event[], opts: { cityDefault: string; windowDays: number; windowPastDays?: number }): Event[] {
-  const now = Date.now();
-  const pastWindow = typeof opts.windowPastDays === 'number' ? opts.windowPastDays : 1;
-  const min = now - pastWindow * 24 * 60 * 60 * 1000;
-  const max = now + opts.windowDays * 24 * 60 * 60 * 1000;
+export function normalizeAndFilter(events: Event[], opts: { cityDefault: string; windowDays?: number; windowPastDays?: number }): Event[] {
+  // No time filtering - accept all events regardless of date
   return events
     .map((e) => ({
       ...e,
       city: e.city || opts.cityDefault
     }))
     .filter((e) => {
+      // Only filter out events with invalid dates
       const t = Date.parse(e.startISO);
-      if (Number.isNaN(t)) return false;
-      return t >= min && t <= max;
+      return !Number.isNaN(t);
     });
 }
 

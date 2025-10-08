@@ -23,7 +23,19 @@ export async function upsertTruck(t: {name:string; website?:string; facebook?:st
 
 export async function upsertEvents(truckId: string, events: Event[]) {
   if (!events.length) return;
-  const body = events.map(e => ({
+  
+  // Deduplicate events by composite key to avoid constraint violations
+  const seen = new Set<string>();
+  const uniqueEvents = events.filter(e => {
+    const key = `${e.startISO}|${e.venue}|${e.rawAddress || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  
+  if (!uniqueEvents.length) return;
+  
+  const body = uniqueEvents.map(e => ({
     truck_id: truckId,
     start_ts: e.startISO,
     end_ts: e.endISO,
@@ -36,6 +48,7 @@ export async function upsertEvents(truckId: string, events: Event[]) {
     confidence: e.confidence,
     last_seen_at: new Date().toISOString()
   }));
+  
   const res = await fetch(`${base}/events?on_conflict=truck_id,start_ts,venue,raw_address`, { method: 'POST', headers: hdrs, body: JSON.stringify(body) });
   if (!res.ok) {
     const text = await res.text();

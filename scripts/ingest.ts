@@ -10,7 +10,7 @@ import { normalizeAndFilter } from '../lib/normalize';
 import { upsertTruck, upsertEvents } from '../lib/supabase';
 import { Event, Truck } from '../schemas';
 import { CONFIG as CFG } from '../lib/config';
-import { writeSeedSnapshot, recordPendingUpserts, recordWriteFailure } from '../lib/cache';
+import { writeSeedSnapshot, recordPendingUpserts, recordWriteFailure, recordScrapedData, recordLlmEvents } from '../lib/cache';
 
 async function main() {
   const argv = await yargs(hideBin(process.argv))
@@ -24,7 +24,16 @@ async function main() {
     .help()
     .parseAsync();
 
-  logger.setFile(argv['log-file']);
+  // Generate timestamped log file if not specified
+  const logFile = argv['log-file'] as string | undefined;
+  if (logFile && !logFile.includes('/')) {
+    // If just a filename, put it in logs/ directory with timestamp subdirectory
+    const timestamp = Date.now();
+    const name = logFile.replace('.jsonl', '');
+    logger.setFile(`logs/${timestamp}/${name}.jsonl`);
+  } else {
+    logger.setFile(logFile);
+  }
   logger.info('ingest-start', { dry: argv.dry, only: argv.only, limit: argv.limit, city: CONFIG.cityDefault, verbose: argv.verbose, logFile: argv['log-file'] });
   const seed = await fetchSeedJson();
   try { writeSeedSnapshot(CONFIG.seedJsonUrl, seed.trucks); } catch {}
@@ -53,8 +62,17 @@ async function main() {
         logger.info('candidate-start', { truck: truck.name, url, provider: p });
         const out = p === 'FIRECRAWL' ? await extractWithFirecrawl(url, truck.name, { verbose: !!argv.verbose })
                                       : await extractWithApify(url, truck.name, { verbose: !!argv.verbose });
-        events = normalizeAndFilter(out, { cityDefault: CONFIG.cityDefault, windowDays: CONFIG.windowDays, windowPastDays: CONFIG.windowPastDays });
-        if (events.length) break;
+        
+        // Cache scraped data
+        try { recordScrapedData(truck.name, p, url, out); } catch {}
+        
+        events = normalizeAndFilter(out, { cityDefault: CONFIG.cityDefault });
+        
+        // Cache LLM events if any
+        if (events.length) {
+          try { recordLlmEvents(truck.name, p, url, events); } catch {}
+          break;
+        }
       } catch (e) {
         lastErr = e;
         if (argv.verbose) {
