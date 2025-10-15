@@ -51,7 +51,10 @@ export const CONFIG = {
   supabaseServiceRoleKey: requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
 
   useLlm: (process.env.USE_LLM || 'false').toLowerCase() === 'true',
-  openAiApiKey: process.env.OPENAI_API_KEY
+  openAiApiKey: process.env.OPENAI_API_KEY,
+
+  // Optional Google Maps Geocoding API
+  googleMapsApiKey: process.env.GOOGLE_MAPS_API_KEY
 };
 
 export type AppConfig = typeof CONFIG;
